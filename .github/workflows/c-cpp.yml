@@ -40,6 +40,10 @@ jobs:
       run: make distcheck --jobs=`nproc` || ( cat enchant-*/_build/sub/program-tests/test-suite.log tests/test-suite.log && exit 1 )
     - name: non-relocatable build
       run: make clean && ./configure && make
+    - uses: actions/upload-artifact@v4
+      with:
+        name: enchant-dist
+        path: enchant-*.tar.gz
 
   build-macos:
     runs-on: macos-latest
@@ -64,6 +68,7 @@ jobs:
       
   build-windows:
     runs-on: windows-latest
+    needs: build
     defaults:
       run:
         shell: msys2 {0}
@@ -78,26 +83,36 @@ jobs:
         release: false
         msystem: ${{matrix.sys}}
         install: >-
-          patch git groff
-          mingw-w64-${{matrix.env}}-autotools
+          make groff
           mingw-w64-${{matrix.env}}-pkg-config
           mingw-w64-${{matrix.env}}-crt
           mingw-w64-${{matrix.env}}-gcc
           mingw-w64-${{matrix.env}}-glib2
-    - uses: actions/checkout@v6
-      with: { submodules: true }
-    - name: Bootstrap (gnulib and autoreconf)
-      run: ./bootstrap
+    - uses: actions/download-artifact@v4
+      with:
+        name: enchant-dist
+        path: tarball
+    - name: Extract
+      run: |
+        cd tarball
+        tar -xzf enchant-*.tar.gz
     - name: configure
       # set lt_cv_deplibs_check_method to pass_all to work around linker error regarding -luuid
       # similar issue as https://github.com/msys2/MINGW-packages/issues/16836
-      run: lt_cv_deplibs_check_method='pass_all' ./configure --enable-relocatable
+      run: |
+        cd tarball/enchant-*/
+        lt_cv_deplibs_check_method='pass_all' ./configure --enable-relocatable
     - name: make
-      run: make --jobs=`nproc`
+      run: |
+        cd tarball/enchant-*/
+        make --jobs=`nproc`
     - name: install
       run: |
+        cd tarball/enchant-*/
         make install DESTDIR=$(pwd)/dist
         cp -v /${{matrix.sys}}/bin/*.dll dist/${{matrix.sys}}/bin/
+    - name: Move dist to workspace
+      run: mv tarball/enchant-*/dist dist
     - name: Archive Release
       uses: thedoctor0/zip-release@0.7.1
       with:
